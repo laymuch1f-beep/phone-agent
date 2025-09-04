@@ -1,10 +1,24 @@
-import { Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { OpenAI } from 'openai';
+import { RealtimeCallIncomingWebhookEvent } from 'openai/resources/webhooks';
+import { Request, Response } from 'express';
+import { PhoneService } from './phone/phone.service';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(
+    private readonly appService: AppService,
+    private readonly phoneService: PhoneService,
+  ) {}
   private readonly client = new OpenAI();
   private readonly webhookSecret = process.env.OPENAI_WEBHOOK_VERIFICATION_KEY;
 
@@ -15,12 +29,28 @@ export class AppController {
 
   @Post('webhook')
   @HttpCode(200)
-  webhook(@Req() req: any) {
-    const event = this.client.webhooks.unwrap(
-      req.body,
-      req.headers,
-      this.webhookSecret,
-    );
-    return 'pong';
+  async webhook(@Req() req: Request, @Res() res: Response) {
+    try {
+      const event = await this.client.webhooks.unwrap(
+        req.body,
+        req.headers,
+        this.webhookSecret,
+      );
+
+      const body: RealtimeCallIncomingWebhookEvent = req.body;
+
+      if (body.type === 'realtime.call.incoming') {
+        await this.phoneService.handleIncomingCall();
+      }
+      console.log(event);
+      return 'pong';
+    } catch (e) {
+      if (e instanceof OpenAI.InvalidWebhookSignatureError) {
+        console.error('Invalid signature', e);
+        throw new UnauthorizedException('Invalid signature');
+      } else {
+        throw e;
+      }
+    }
   }
 }

@@ -1,9 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { CreatePhoneDto } from './dto/create-phone.dto';
 import { UpdatePhoneDto } from './dto/update-phone.dto';
+import { OpenAI } from 'openai';
 
 @Injectable()
 export class PhoneService {
+  private readonly client = new OpenAI();
+  async handleIncomingCall() {
+
+  }
   create(createPhoneDto: CreatePhoneDto) {
     return 'This action adds a new phone';
   }
