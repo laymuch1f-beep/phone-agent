@@ -8,8 +8,11 @@ async function bootstrap() {
   
   // Use PORT from environment or default to 3000
   const port = process.env.PORT || 3000;
-  await app.listen(port);
   
-  console.log(`Application is running on: http://localhost:${port}`);
+  // CRITICAL: Add '0.0.0.0' as the second parameter
+  await app.listen(port, '0.0.0.0');
+  
+  console.log(`🚀 Application is running on port: ${port}`);
+  console.log(`🌐 Accessible at: http://0.0.0.0:${port}`);
 }
 bootstrap();
