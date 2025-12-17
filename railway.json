@@ -1,6 +1,19 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm ci --include=dev && npm run build"
+    "buildCommand": "npm ci --include=dev && npm run build",
+    "nixpacksPlan": {
+      "variables": {
+        "NODE_VERSION": "20"
+      },
+      "phases": {
+        "setup": {
+          "cmds": ["npm ci --include=dev"]
+        },
+        "build": {
+          "cmds": ["npm run build"]
+        }
+      }
+    }
   }
 }
