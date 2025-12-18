@@ -23,6 +23,15 @@ export class AppController {
   private readonly webhookSecret = process.env.OPENAI_WEBHOOK_VERIFICATION_KEY;
 
   @Get()
+  getHealth(): { status: string; timestamp: string; service: string } {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      service: 'phone-agent',
+    };
+  }
+
+  @Get('/hello')
   getHello(): string {
     return this.appService.getHello();
   }
@@ -30,6 +39,8 @@ export class AppController {
   @Post('webhook')
   @HttpCode(200)
   async webhook(@Req() req: RawBodyRequest<Request>) {
+    console.log('📞 Webhook received at:', new Date().toISOString());
+    
     try {
       const event = await this.client.webhooks.unwrap(
         req.rawBody!.toString(),
@@ -37,12 +48,16 @@ export class AppController {
         this.webhookSecret!,
       );
 
+      console.log('✅ Webhook verified, event type:', event.type);
+
       if (event.type === 'realtime.call.incoming' && event?.data?.call_id) {
+        console.log('📱 Incoming call ID:', event.data.call_id);
         return this.phoneService.handleIncomingCall(event.data.call_id);
       }
 
       return 'pong';
     } catch (e) {
+      console.error('❌ Webhook error:', e);
       if (e instanceof OpenAI.InvalidWebhookSignatureError) {
         throw new UnauthorizedException('Invalid signature');
       } else {
