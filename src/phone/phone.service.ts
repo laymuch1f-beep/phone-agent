@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import WebSocket from 'ws';
+import * as WebSocket from 'ws';  // ⭐ FIXED IMPORT
 import axios from 'axios';
 
 @Injectable()
