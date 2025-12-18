@@ -12,7 +12,8 @@
   "scripts": {
     "build": "npx nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "npx nest start",
+    "start": "node dist/main",
+    "dev": "npx nest start --watch",
     "start:dev": "npx nest start --watch -b swc --type-check",
     "start:debug": "npx nest start --debug --watch",
     "start:prod": "node dist/main",
