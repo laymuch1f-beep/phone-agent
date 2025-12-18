@@ -1,13 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import WebSocket from 'ws';
 import axios from 'axios';
-import { RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime';
 
 @Injectable()
 export class PhoneService {
   private readonly logger = new Logger(PhoneService.name);
   private readonly apiKey = process.env.OPENAI_API_KEY!;
-  // optional: keep track of active sockets
   private sockets = new Map<string, WebSocket>();
 
   private get authHeader() {
@@ -18,7 +16,7 @@ export class PhoneService {
     callId: string,
     opts?: { instructions?: string; model?: string },
   ) {
-    const body: RealtimeSessionCreateRequest = {
+    const body = {
       type: 'realtime',
       model: opts?.model || 'gpt-realtime',
       output_modalities: ['audio'],
@@ -33,22 +31,32 @@ export class PhoneService {
           speed: 1.0,
         },
       },
-      instructions:
-        opts?.instructions ||
-        `You are a helpful assistant for a restaurant, we always availability for bookings.
+      instructions: opts?.instructions || `You are a helpful assistant for a restaurant, we always availability for bookings.
          Speak clearly and briefly.
           Confirm understanding before taking actions.
           Your default language is English, unless a user uses a different language`,
     };
 
     try {
-      await axios.post(
+      const response = await axios.post(
         `https://api.openai.com/v1/realtime/calls/${callId}/accept`,
         body,
-        { headers: { ...this.authHeader, 'Content-Type': 'application/json' } },
+        { 
+          headers: { 
+            ...this.authHeader, 
+            'Content-Type': 'application/json' 
+          } 
+        },
       );
-    } catch (e) {
-      console.log('Error yacho', e.message);
+      this.logger.log(`✅ Call ${callId} accepted successfully`);
+      return response.data;
+    } catch (e: any) {
+      this.logger.error(`❌ Error accepting call ${callId}:`, e.message);
+      if (e.response) {
+        this.logger.error('Response data:', e.response.data);
+        this.logger.error('Response status:', e.response.status);
+      }
+      throw e;
     }
   }
 
@@ -62,7 +70,7 @@ export class PhoneService {
     this.sockets.set(callId, ws);
 
     ws.on('open', () => {
-      this.logger.log(`WS open for call ${callId}`);
+      this.logger.log(`🔌 WS open for call ${callId}`);
 
       const responseCreate = {
         type: 'response.create',
@@ -77,57 +85,81 @@ export class PhoneService {
     });
 
     ws.on('message', (data) => {
-      // OpenAI events are JSON strings
       try {
         const text = data.toString();
-        this.logger.debug(`WS message (${callId}): ${text}`);
-        // TODO: route events as needed
+        this.logger.debug(`📨 WS message (${callId}): ${text}`);
       } catch (e) {
-        this.logger.error(`Failed to parse WS message for ${callId}`, e as any);
+        this.logger.error(`Failed to parse WS message for ${callId}`, e);
       }
     });
 
     ws.on('close', (code, reason) => {
       this.logger.log(
-        `WS closed for ${callId}: code=${code} reason=${reason.toString()}`,
+        `🔌 WS closed for ${callId}: code=${code} reason=${reason.toString()}`,
       );
       this.sockets.delete(callId);
     });
 
     ws.on('error', (err) => {
-      this.logger.error(`WS error for ${callId}: ${err.message}`, err.stack);
+      this.logger.error(`❌ WS error for ${callId}: ${err.message}`);
     });
   }
 
   async handleIncomingCall(callId: string) {
-    await this.acceptCall(callId);
-    // Don’t block the HTTP handler; start WS in background
-    setImmediate(() => {
-      this.connect(callId).catch((e) =>
-        this.logger.error(
-          `Failed to connect WS for ${callId}: ${e.message}`,
-          e.stack,
-        ),
-      );
-    });
+    this.logger.log(`📞 Handling incoming call: ${callId}`);
+    
+    try {
+      // 1. Accept the call via OpenAI API
+      await this.acceptCall(callId);
+      
+      // 2. Start WebSocket connection in background
+      setImmediate(() => {
+        this.connect(callId).catch((e) =>
+          this.logger.error(
+            `❌ Failed to connect WS for ${callId}: ${e.message}`,
+          ),
+        );
+      });
+
+      // 3. ⭐ CRITICAL: Return expected response to OpenAI webhook
+      return {
+        control: {
+          action: 'accept',
+          parameters: {
+            voice: 'coral',
+            instructions: `You are a helpful assistant for a restaurant, we always availability for bookings.
+               Speak clearly and briefly.
+                Confirm understanding before taking actions.
+                Your default language is English, unless a user uses a different language`,
+            turn_detection: {
+              type: 'server_vad',
+            }
+          }
+        }
+      };
+    } catch (error) {
+      this.logger.error(`❌ Failed to handle call ${callId}:`, error);
+      throw error; // Let the controller handle the error
+    }
   }
 
   async terminateCall(callId: string) {
     try {
       await axios.post(
         `https://api.openai.com/v1/realtime/calls/${callId}/hangup`,
-        null, // or {}
+        null,
         {
           headers: {
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            'Content-Type': 'application/json', // optional for empty body
+            'Content-Type': 'application/json',
           },
         },
       );
+      this.logger.log(`✅ Call ${callId} terminated`);
       return { ok: true };
     } catch (e: any) {
-      console.error(
-        'Hangup failed',
+      this.logger.error(
+        `❌ Hangup failed for ${callId}:`,
         e.response?.status,
         e.response?.data ?? e.message,
       );
@@ -135,7 +167,6 @@ export class PhoneService {
     }
   }
 
-  // Optional: expose a way to end a call/cleanup
   close(callId: string) {
     const sock = this.sockets.get(callId);
     if (sock && sock.readyState === WebSocket.OPEN) sock.close(1000, 'done');
